@@ -1,0 +1,22 @@
+server:
+  port: 8081
+
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/sgw}
+    username: ${DB_USER:sgw}
+    password: ${DB_PASSWORD:sgw}
+    hikari:
+      maximum-pool-size: 10
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+gateway:
+  proxy-api-key: ${PROXY_API_KEY:dev-proxy-key}      # shared secret used by the proxies
+  admin-user: ${ADMIN_USER:admin}                     # dashboard login
+  admin-password: ${ADMIN_PASSWORD:admin123}
+  log-retention-days: ${LOG_RETENTION_DAYS:7}

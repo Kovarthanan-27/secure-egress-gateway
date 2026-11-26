@@ -1,0 +1,66 @@
+# Secure Egress Gateway - run everything with:  docker compose up --build
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sgw
+      POSTGRES_USER: sgw
+      POSTGRES_PASSWORD: sgw
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro   # runs once, on first start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sgw -d sgw"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  control-plane:                                   # Spring Boot: policy, logs, dashboard API
+    build: ./control-plane
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/sgw
+      DB_USER: sgw
+      DB_PASSWORD: sgw
+      PROXY_API_KEY: dev-proxy-key                 # shared secret with the proxy
+      ADMIN_USER: admin
+      ADMIN_PASSWORD: admin123                     # dashboard login (change for anything real)
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8081'"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+
+  proxy:                                           # C++ data plane: the actual forward proxy
+    build: ./proxy
+    environment:
+      CONTROL_PLANE_HOST: control-plane
+      CONTROL_PLANE_PORT: "8081"
+      PROXY_API_KEY: dev-proxy-key
+      POLL_SECONDS: "5"
+      FAIL_MODE: closed                            # no policy ever loaded => block (use "open" to allow)
+      BLOCK_PRIVATE_RANGES: "true"                 # SSRF guard
+    volumes:
+      - proxydata:/data                            # last good policy survives restarts
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  dashboard:                                       # React + TypeScript, served by nginx
+    build: ./dashboard
+    depends_on:
+      - control-plane
+    ports:
+      - "3000:80"
+
+volumes:
+  pgdata:
+  proxydata:
